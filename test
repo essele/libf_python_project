@@ -2,6 +2,7 @@
 
 from bokeh.plotting import figure, show
 from collections import OrderedDict
+from math import nan
 import csv
 import string
 
@@ -66,86 +67,97 @@ class Component():
     def getName(self):
         return type(self).__name__
 
+    #
+    # Re-implementation of the block function so we can use percentages...
+    #
+    def block(self, p, x, y, w, h, **kwargs):
+        p.block(x=self.originx + (self.width*x), y=self.originy + (self.height*y),
+                width=self.width*w, height=self.height*h, **kwargs)
+
+    # 
+    # Same for line... supporting multiple values
+    #
+    def line(self, p, x, y, **kwargs):
+        # Wanted to use map/lambda here, but got very weird errors
+        for i, xx in enumerate(x):
+            x[i] = self.originx + (self.width * xx)
+        for i, yy in enumerate(y):
+            y[i] = self.originy + (self.height * yy)
+        p.line(x, y, **kwargs)
+
+    #
+    # And same for ellipse [circle] (just support one)
+    #
+    def circle(self, plot, dia, **kwargs):
+        mindim = min(self.width, self.height)
+        plot.ellipse(x=self.originx+(self.width*0.5), y=self.originy+(self.height*0.5),
+            width=mindim*dia, height=mindim*dia, **kwargs)
+        
+
     def draw(self, plot):
-        #p.block(x=[self.originx], y=[self.originy], width=[self.width], height=[self.height], line_color="#dddddd", fill_alpha=0.0, line_dash="dotted")
-        p.block(x=[self.originx], y=[self.originy], width=[self.width], height=[self.height], 
-            line_color="#dddddd", fill_alpha=0.0, line_alpha=0.5, line_dash="dotted")
+        self.block(plot, 0, 0, 1, 1, line_color="#dddddd", fill_alpha=0.0, line_alpha=0.5, line_dash="dotted")
 
 
 class Unknown(Component):
     def draw(self, plot):
         super().draw(plot)
 
-        p.block(x=[self.originx + (self.width*0.02)], y=[self.originy + (self.height*0.02)],
-                    width=[self.width * 0.96], height=[self.height * 0.96],
-                    hatch_color="green", hatch_pattern="diagonal_cross", hatch_weight=1, fill_alpha=0.0, line_alpha=0.0, hatch_scale=8)
+        # Used fixed (not relative) gap for this one...
+        gap = 0.2
+        plot.block(x=self.originx+gap, y=self.originy+gap, width=self.width-(gap*2), height=self.height-(gap*2),
+                    hatch_color="green", hatch_pattern="diagonal_cross", hatch_weight=1, 
+                    fill_alpha=0.0, line_alpha=0.0, hatch_scale=8)
+
 
 class Resistor(Component):
     def draw(self, plot):
         super().draw(plot)
 
-        p.block(x=[self.originx + (self.width*0.3)], y=[self.originy + (self.height*0.2)],
-            width=[self.width*0.4], height=[self.height*0.6], color="yellow", line_width=1, fill_alpha=0.0);
-        p.line([self.originx + (self.width*0.1), self.originx + (self.width*0.3)],
-                [self.originy + (self.height*0.5), self.originy + (self.height*0.5)], color="yellow", line_width=1)
-        p.line([self.originx + (self.width*0.7), self.originx + (self.width*0.9)],
-                [self.originy + (self.height*0.5), self.originy + (self.height*0.5)], color="yellow", line_width=1)
+        self.line(plot, 
+                    [0.1, 0.3, 0.3, 0.7, 0.7, 0.9, nan, 0.7, 0.7, 0.3, 0.3],
+                    [0.5, 0.5, 0.2, 0.2, 0.5, 0.5, nan, 0.5, 0.8, 0.8, 0.5],
+                    color="yellow", line_width=1)
 
 class Capacitor(Component):
     def draw(self, plot):
         super().draw(plot)
 
-        p.line([self.originx + (self.width*0.1), self.originx + (self.width*0.4)],
-                [self.originy + (self.height*0.5), self.originy + (self.height*0.5)], color="yellow", line_width=1)
 
-        p.line([self.originx + (self.width*0.4), self.originx + (self.width*0.4)],
-                [self.originy + (self.height*0.2), self.originy + (self.height*0.8)], color="yellow", line_width=1)
-        p.line([self.originx + (self.width*0.6), self.originx + (self.width*0.6)],
-                [self.originy + (self.height*0.2), self.originy + (self.height*0.8)], color="yellow", line_width=1)
+        self.line(plot, 
+                    [0.1, 0.4, nan, 0.4, 0.4, nan, 0.6, 0.6, nan, 0.6, 0.9],
+                    [0.5, 0.5, nan, 0.2, 0.8, nan, 0.2, 0.8, nan, 0.5, 0.5],
+                    color="yellow", line_width=1)
 
-        p.line([self.originx + (self.width*0.6), self.originx + (self.width*0.9)],
-                [self.originy + (self.height*0.5), self.originy + (self.height*0.5)], color="yellow", line_width=1)
 
 class Transistor(Component):
     def draw(self, plot):
         super().draw(plot)
 
-        dia = min(self.width*0.9, self.height*0.9)
-        p.ellipse(x=[self.originx+(self.width*0.5)], y=[self.originy+(self.height*0.5)],
-                width=dia, height=dia, color="yellow", line_width=1)
+        self.circle(plot, 0.9, color="yellow", line_width=1);
 
 class IC(Component):
     def draw(self, plot):
         super().draw(plot)
 
-        p.block(x=[self.originx + (self.width*0.3)], y=[self.originy + (self.height*0.2)],
-            width=[self.width*0.4], height=[self.height*0.6], color="yellow", line_width=1, fill_alpha=0.0);
+        xx = [ 0.3, 0.7, 0.7, 0.3, 0.3, nan ];      # Main box
+        yy = [ 0.2, 0.2, 0.8, 0.8, 0.2, nan ];      # Main box
+        for i in [ 0.3, 0.4, 0.5, 0.6, 0.7 ]:       # Add legs to both sides
+            xx += [ 0.1, 0.3, nan ];
+            yy += [ i, i, nan ];
+            xx += [ 0.7, 0.9, nan ];
+            yy += [ i, i, nan ];
 
-        for i in [ 0.3, 0.4, 0.5, 0.6, 0.7 ]:
-            p.line([self.originx + (self.width*0.1), self.originx + (self.width*0.3)],
-                    [self.originy + (self.height*i), self.originy + (self.height*i)], color="yellow", line_width=1)
-            p.line([self.originx + (self.width*0.7), self.originx + (self.width*0.9)],
-                    [self.originy + (self.height*i), self.originy + (self.height*i)], color="yellow", line_width=1)
+        self.line(plot, xx, yy, color="yellow", line_width=1)
+
 
 class Diode(Component):
     def draw(self, plot):
         super().draw(plot)
 
-        p.line([self.originx + (self.width*0.3), self.originx + (self.width*0.3)],
-                [self.originy + (self.height*0.3), self.originy + (self.height*0.7)], color="yellow", line_width=1)
-        p.line([self.originx + (self.width*0.3), self.originx + (self.width*0.7)],
-                [self.originy + (self.height*0.3), self.originy + (self.height*0.5)], color="yellow", line_width=1)
-        p.line([self.originx + (self.width*0.3), self.originx + (self.width*0.7)],
-                [self.originy + (self.height*0.7), self.originy + (self.height*0.5)], color="yellow", line_width=1)
-        p.line([self.originx + (self.width*0.7), self.originx + (self.width*0.7)],
-                [self.originy + (self.height*0.3), self.originy + (self.height*0.7)], color="yellow", line_width=1)
-
-        p.line([self.originx + (self.width*0.1), self.originx + (self.width*0.3)],
-                [self.originy + (self.height*0.5), self.originy + (self.height*0.5)], color="yellow", line_width=1)
-        p.line([self.originx + (self.width*0.7), self.originx + (self.width*0.9)],
-                [self.originy + (self.height*0.5), self.originy + (self.height*0.5)], color="yellow", line_width=1)
-
-
+        self.line(plot,
+                    [0.1, 0.3, 0.3, 0.7, 0.3, 0.3, nan, 0.7, 0.7, nan, 0.7, 0.9], 
+                    [0.5, 0.5, 0.3, 0.5, 0.7, 0.5, nan, 0.3, 0.7, nan, 0.5, 0.5],
+                    color="yellow", line_width=1)
 
 
 mapping = { "FB": Unknown, "R": Resistor, "C": Capacitor, "Q": Transistor, "U": IC, "D": Diode }
@@ -185,24 +197,8 @@ with open("/home/essele/kicad/sample/components.csv") as cfile:
         map = mapping.get(rt, Unknown)
         print("Map is")
         print(map)
-        if (map):
-            c = map(board, row)
-        else:
-            c = Unknown(board, row)
-
-
-#        if (row["ref"][0] == "R"):
-#            c = Resistor(board, row)
-#        elif (row["ref"][0] == "C"):
-#            c = Capacitor(board, row)
-#        elif (row["ref"][0] == "Q"):
-#            c = Unknown(board, row)
-#        else:
-#            c = Component(board, row)
-
-#        c.draw(p, line_width=1, color="grey")
+        c = map(board, row)
         c.draw(p)
-        print(row["ref"])
 
 
 

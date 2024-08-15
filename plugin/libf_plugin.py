@@ -8,7 +8,7 @@
 # In an ideal world you would do full processing in here rather than export CSV's
 # for external processing, but to make testing easier, and for testing without KiCAD
 # this allows for the provision of interim data.
-# 
+#
 # Also, there are some limitations here if the KiCAD directory includes multiple
 # designs as there would be a potential filename clash.
 #
@@ -78,7 +78,7 @@ class LIBFPlugin(pcbnew.ActionPlugin):
         # to do the JLCPCB stuff as well as the visualisations we need
         #
         with open(os.path.join(path, "components.csv"), "w") as cfile:
-            fieldnames = [ "ref", "value", "layername", "footprint", "x", "y", "rot", "top", "left", "bottom", "right" ]
+            fieldnames = [ "ref", "value", "layer", "footprint", "x", "y", "rot", "top", "left", "bottom", "right" ]
             writer = csv.DictWriter(cfile, fieldnames=fieldnames)
             writer.writeheader()
 
@@ -100,15 +100,17 @@ class LIBFPlugin(pcbnew.ActionPlugin):
                 layer = fp.GetLayerName();
                 ref = fp.GetReference();
                 value = fp.GetValue();
-                layername = "top" if (layer == "F.Cu") else "bottom"
+                #layername = "top" if (layer == "F.Cu") else "bottom"
                 fpname = str(fp.GetFPID().GetLibItemName())
 
-                bb = fp.GetBoundingBox()
+                # fp.GetBoundingBox seems to be massive, so go via GetCourtyard
+                #bb = fp.GetBoundingBox()
+                bb = fp.GetCourtyard(fp.GetLayer()).BBox()
 
                 writer.writerow({
                     "ref":          ref,
                     "value":        value,
-                    "layername":    layername,
+                    "layer":        layer,
                     "footprint":    fpname,
                     "x":            x,
                     "y":            y,
