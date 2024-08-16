@@ -240,6 +240,9 @@ board.draw(p, line_width=2, fill_color="#002d04", line_color="black")
 # We will build a BOM list as we go, combining like elements...
 bom = {}
 
+# Placement will be a list of dicts for output...
+placement = []
+
 with open("/home/essele/kicad/sample/components.csv") as cfile:
     reader = csv.DictReader(cfile)
     for row in reader:
@@ -258,14 +261,48 @@ with open("/home/essele/kicad/sample/components.csv") as cfile:
         # Now prepare the BOM info ... combine like components ...
         key = c.getBOMKey()
         if (not key in bom):
-            bom[key] = { "value": c.value, "fotprint": c.footprint, "lcsc": c.lcsc, "refs": [ c.ref ] }
+            bom[key] = { "Component": c.value, "Footprint": c.footprint, "JLCPCB": c.lcsc, "refs": [ c.ref ] }
         else:
             bom[key]["refs"].append(c.ref)
 
-print(bom)
+        # Now we can work on the placement information...
+        layername = "top" if (c.layer == "F.Cu") else "bottom"
+        rotation = c.rot
+
+        placement.append({
+            "Designator":   c.ref,
+            "Mid X":        c.x / 1000000.0,
+            "Mid Y":        -c.y / 1000000.0,        # y direction is reversed
+            "Layer":        layername,
+            "Rotation":     rotation,
+        })
 
 
+#
+# Now we can output the BOM...
+#
+with open("out_bom.csv", "w") as bomfile:
+    writer = csv.DictWriter(bomfile, quoting=csv.QUOTE_ALL,
+        fieldnames=["Component", "Designator", "Footprint", "JLCPCB"])
+    writer.writeheader()
+    for key, bominfo in bom.items():
+        # Replace list of refs with comma separated string...
+        bominfo["Designator"] = ",".join(bominfo["refs"])
+        del bominfo["refs"]
+        writer.writerow(bominfo)
 
+#
+# And the placement information
+#
+with open("out_cpl.csv", "w") as cplfile:
+    writer = csv.DictWriter(cplfile, quoting=csv.QUOTE_NONNUMERIC,
+        fieldnames=["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
+    writer.writeheader();
+    for item in placement:
+        writer.writerow(item)
 
-# show the results
+#
+# Now generate a range of additional visualisations...
+#
+
 #show(p)
