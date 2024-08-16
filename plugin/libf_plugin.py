@@ -78,7 +78,7 @@ class LIBFPlugin(pcbnew.ActionPlugin):
         # to do the JLCPCB stuff as well as the visualisations we need
         #
         with open(os.path.join(path, "components.csv"), "w") as cfile:
-            fieldnames = [ "ref", "value", "layer", "footprint", "x", "y", "rot", "top", "left", "bottom", "right" ]
+            fieldnames = [ "ref", "value", "layer", "footprint", "lcsc", "x", "y", "rot", "top", "left", "bottom", "right" ]
             writer = csv.DictWriter(cfile, fieldnames=fieldnames)
             writer.writeheader()
 
@@ -90,7 +90,7 @@ class LIBFPlugin(pcbnew.ActionPlugin):
                 # Specific support for LCSC part numbers (if we have them)
                 #
                 if (fp.HasFieldByName("LCSC")):
-                    lcsc = fp.GetFieldByName("LCSC")
+                    lcsc = fp.GetFieldByName("LCSC").GetText()
                 else:
                     lcsc = ""
 
@@ -112,6 +112,7 @@ class LIBFPlugin(pcbnew.ActionPlugin):
                     "value":        value,
                     "layer":        layer,
                     "footprint":    fpname,
+                    "lcsc":         lcsc,
                     "x":            x,
                     "y":            y,
                     "rot":          rot,

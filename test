@@ -17,7 +17,7 @@ def kicad_num(v):
 #
 # Helper function to return the reference type from the given reference
 #
-# Could have used regex, but this seemed more efficient?
+# Could have used regex, but this seemed lighter weight.
 #
 def reftype(s):
     for i, c in enumerate(s):
@@ -53,87 +53,136 @@ class Shape():
 
     def draw(self, plot, **kwargs):
         p.patch(self.xlist + [self.xlist[0]], self.ylist + [self.ylist[0]], **kwargs)
-        
+
+
+class Point():
+    '''
+    Helper class to group x and y co-ordinates
+    '''
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+class Size():
+    '''
+    Helper class to group width and height co-ordinates
+    '''
+    def __init__(self, w, h):
+        self.w = w
+        self.h = h
+       
+
+class Plottable():
+    '''
+    A class that puts a vaneer around the Bokeh plotting functions so that
+    we can use percentage based co-ordinates for ease of scale drawing
+    '''
+    def __init__(self, x, y, w, h):
+        self.origin = Point(x, y)
+        self.size = Size(w, h)
+
+    def block(self, plot, x, y, w, h, **kwargs):
+        p.block(x=self.origin.x + (self.size.w * x), y=self.origin.y + (self.size.h * y),
+                width=self.size.w*w, height=self.size.h*h, **kwargs)
+
+    def outline(self, plot):
+        self.block(plot, 0, 0, 1, 1, line_color="#dddddd", fill_alpha=0.0, line_alpha=0.5, line_dash="dotted")
+
+    def hatch(self, plot):
+        # Used fixed (not relative) gap for this one...
+        gap = 0.2
+        plot.block(x=self.origin.x+gap, y=self.origin.y+gap, width=self.size.w-(gap*2), height=self.size.h-(gap*2),
+                    hatch_color="green", hatch_pattern="diagonal_cross", hatch_weight=1, 
+                    fill_alpha=0.0, line_alpha=0.0, hatch_scale=8)
+
+    def line(self, plot, xlist, ylist, **kwargs):
+        for i, x in enumerate(xlist):
+            xlist[i] = self.origin.x + (self.size.w * x)
+        for i, y in enumerate(ylist):
+            ylist[i] = self.origin.y + (self.size.h * y)
+        plot.line(xlist, ylist, **kwargs)
+
+    def circle(self, plot, dia, **kwargs):
+        mindim = min(self.size.w, self.size.h)
+        plot.ellipse(x=self.origin.x + (self.size.w * 0.5), y=self.origin.y + (self.size.h * 0.5),
+        width=mindim*dia, height=mindim*dia, **kwargs)
+
 
 class Component():
+    '''
+    The base Component class serves a number of purposes...
+    1. To keep all the KiCad data in relatively raw form
+    2. To provide an interface to drawing for the board visualisation
+    3. To provide the outputs needed for creating the assembly files
+    4. To provide access for other metrics
+    '''
     def __init__(self, board, fields):
-        
-        # Some handy references for future drawing
-        self.width = kicad_num(fields["right"]) - kicad_num(fields["left"])
-        self.height = kicad_num(fields["bottom"]) - kicad_num(fields["top"])
-        self.originx = kicad_num(fields["left"]) - board.minx;
-        self.originy = kicad_num(fields["top"]) - board.miny
+        # First the fields we need for PCBA...
+        self.ref = fields["ref"]
+        self.value = fields["value"]
+        self.layer = fields["layer"]
+        self.footprint = fields["footprint"]
+        self.lcsc = fields["lcsc"]
+        self.x = float(fields["x"])
+        self.y = float(fields["y"])
+        self.rot = float(fields["rot"])
 
+        # TODO: what if fields are missing or malformed?
+       
+        # Now we can add the Plottable for board visualisation, co-ordinates
+        # converted to mm here...
+        self.plotter = Plottable(
+            kicad_num(fields["left"]) - board.minx,                     # x
+            kicad_num(fields["top"]) - board.miny,                      # y
+            kicad_num(fields["right"]) - kicad_num(fields["left"]),     # width
+            kicad_num(fields["bottom"]) - kicad_num(fields["top"]))     # height
+            
     def getName(self):
         return type(self).__name__
 
-    #
-    # Re-implementation of the block function so we can use percentages...
-    #
-    def block(self, p, x, y, w, h, **kwargs):
-        p.block(x=self.originx + (self.width*x), y=self.originy + (self.height*y),
-                width=self.width*w, height=self.height*h, **kwargs)
-
-    # 
-    # Same for line... supporting multiple values
-    #
-    def line(self, p, x, y, **kwargs):
-        # Wanted to use map/lambda here, but got very weird errors
-        for i, xx in enumerate(x):
-            x[i] = self.originx + (self.width * xx)
-        for i, yy in enumerate(y):
-            y[i] = self.originy + (self.height * yy)
-        p.line(x, y, **kwargs)
+    def getBOMKey(self):
+        return self.value + "//" + self.footprint + "//" + self.lcsc
 
     #
-    # And same for ellipse [circle] (just support one)
+    # Default drawing function is just the outline...
     #
-    def circle(self, plot, dia, **kwargs):
-        mindim = min(self.width, self.height)
-        plot.ellipse(x=self.originx+(self.width*0.5), y=self.originy+(self.height*0.5),
-            width=mindim*dia, height=mindim*dia, **kwargs)
-        
-
     def draw(self, plot):
-        self.block(plot, 0, 0, 1, 1, line_color="#dddddd", fill_alpha=0.0, line_alpha=0.5, line_dash="dotted")
+        self.plotter.outline(plot)
 
 
 class Unknown(Component):
     def draw(self, plot):
         super().draw(plot)
-
-        # Used fixed (not relative) gap for this one...
-        gap = 0.2
-        plot.block(x=self.originx+gap, y=self.originy+gap, width=self.width-(gap*2), height=self.height-(gap*2),
-                    hatch_color="green", hatch_pattern="diagonal_cross", hatch_weight=1, 
-                    fill_alpha=0.0, line_alpha=0.0, hatch_scale=8)
+        self.plotter.hatch(plot)
 
 
 class Resistor(Component):
     def draw(self, plot):
         super().draw(plot)
-
-        self.line(plot, 
+        self.plotter.line(plot, 
                     [0.1, 0.3, 0.3, 0.7, 0.7, 0.9, nan, 0.7, 0.7, 0.3, 0.3],
                     [0.5, 0.5, 0.2, 0.2, 0.5, 0.5, nan, 0.5, 0.8, 0.8, 0.5],
                     color="yellow", line_width=1)
 
+class FerriteBead(Resistor):
+    def draw(self, plot):
+        super().draw(plot)
+        self.plotter.block(plot, 0.3, 0.2, 0.4, 0.6, color="yellow", 
+                    hatch_color="yellow", hatch_pattern="vertical_wave", hatch_weight=1, 
+                    fill_alpha=0.0, line_alpha=0.0, hatch_scale=3)
+
 class Capacitor(Component):
     def draw(self, plot):
         super().draw(plot)
-
-
-        self.line(plot, 
+        self.plotter.line(plot, 
                     [0.1, 0.4, nan, 0.4, 0.4, nan, 0.6, 0.6, nan, 0.6, 0.9],
                     [0.5, 0.5, nan, 0.2, 0.8, nan, 0.2, 0.8, nan, 0.5, 0.5],
                     color="yellow", line_width=1)
 
-
 class Transistor(Component):
     def draw(self, plot):
         super().draw(plot)
-
-        self.circle(plot, 0.9, color="yellow", line_width=1);
+        self.plotter.circle(plot, 0.9, color="yellow", line_width=1);
 
 class IC(Component):
     def draw(self, plot):
@@ -147,21 +196,19 @@ class IC(Component):
             xx += [ 0.7, 0.9, nan ];
             yy += [ i, i, nan ];
 
-        self.line(plot, xx, yy, color="yellow", line_width=1)
+        self.plotter.line(plot, xx, yy, color="yellow", line_width=1)
 
 
 class Diode(Component):
     def draw(self, plot):
         super().draw(plot)
-
-        self.line(plot,
+        self.plotter.line(plot,
                     [0.1, 0.3, 0.3, 0.7, 0.3, 0.3, nan, 0.7, 0.7, nan, 0.7, 0.9], 
                     [0.5, 0.5, 0.3, 0.5, 0.7, 0.5, nan, 0.3, 0.7, nan, 0.5, 0.5],
                     color="yellow", line_width=1)
 
 
-mapping = { "FB": Unknown, "R": Resistor, "C": Capacitor, "Q": Transistor, "U": IC, "D": Diode }
-
+mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "U": IC, "D": Diode }
 
 
 #
@@ -172,7 +219,7 @@ board = Shape()
 with open("/home/essele/kicad/sample/board.csv") as bfile:
     reader = csv.DictReader(bfile)
     for row in reader:
-        print("XX: " + row["x"] + " -- " + row["y"])
+        print("XX: " + row["x"] + " -- " + row["y"]) 
         board.addPoint(kicad_num(row["x"]), kicad_num(row["y"]))
 
     board.shiftToZero()
@@ -187,20 +234,38 @@ board.draw(p, line_width=2, fill_color="#002d04", line_color="black")
 #p.line(board.xlist, board.ylist, legend_label="Board Outline", line_width=2)
 
 #
-# Now run through the components...
+# Now run through the components... prepare the visualations as well as the BOM/CPL info
 #
+
+# We will build a BOM list as we go, combining like elements...
+bom = {}
+
 with open("/home/essele/kicad/sample/components.csv") as cfile:
     reader = csv.DictReader(cfile)
     for row in reader:
+        # Get the reference type from the ref (i.e. R from R100)
         rt = reftype(row["ref"]);
 
+        # Get the Class for that type of ref, otherwise an Unknown
         map = mapping.get(rt, Unknown)
-        print("Map is")
-        print(map)
+
+        # Instantiate the object of the right class...
         c = map(board, row)
+
+        # And draw the component for the board visualisation
         c.draw(p)
+
+        # Now prepare the BOM info ... combine like components ...
+        key = c.getBOMKey()
+        if (not key in bom):
+            bom[key] = { "value": c.value, "fotprint": c.footprint, "lcsc": c.lcsc, "refs": [ c.ref ] }
+        else:
+            bom[key]["refs"].append(c.ref)
+
+print(bom)
+
 
 
 
 # show the results
-show(p)
+#show(p)
