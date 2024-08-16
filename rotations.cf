@@ -1,0 +1,73 @@
+#
+# Rotations for KiCAD to JLCPCB PCBA Service
+#
+# This defines additional rotations we need to apply to ensure the
+# footprints are correctly orientated to work with the JLCPCB PBCA
+# service
+#
+# These are regular expressions that are matched against the short 
+# footprint name (without the library name)
+#
+# The matches are checked against one by one, and the first match
+# is used
+#
+# The regex and the rotation value is separated by any amount of
+# whitespace, blank lines and comments are ignored
+#
+
+#
+# Normal short-name matches
+#
+^SOT-223            180
+^SOT-23             180
+^SOT-89             180
+^D_SOT-23           180
+^TSOT-23            180
+^SOT-353            180
+^QFN-48-            270
+^QFN-               270
+^qfn-               90 
+^LQFP-              270
+^TQFP-              270
+^VQFN-              270
+^MSOP-              270
+^TSSOP-             270
+^DFN-               0
+^SOIC-8_            270
+^SOIC-16_           270
+^SOIC-16W_           270
+^VSSOP-10_-         270
+^SOP-8_             270
+^PowerIntegrations_SO-8C        270
+^SO-8missing7       270
+
+#
+# Polarised caps are 180 out
+#
+^CP_Elec_           180
+^C_Elec_            180
+^CP_EIA-            180
+
+#
+# Bourns POT seems to be wrong as well...
+#
+^Potentiometer_Bourns_3296W_Vertical        270
+
+#
+# USB Footprints seem wrong, although I don't know why?
+#
+^USB_Micro-B_       180
+
+#
+# Long name matches
+#
+#^Lees_Footprints:   270
+^LED_WS2812B_PLCC4   180
+^Diode_Bridge_MBS    0
+^XX_RP2040-QFN         270
+^Pulse_PH9585_TDK_ATB   90
+^Pulse_PH9585       270
+^SiliconLabs_QFN    270
+#^PinHeader	    270
+^8-uson             270
+^TDK_ATB            90

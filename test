@@ -5,6 +5,8 @@ from collections import OrderedDict
 from math import nan
 import csv
 import string
+import pandas as pd
+import re
 
 #
 # Helper function to convert from a KiCAD dimension (string) to
@@ -12,7 +14,6 @@ import string
 #
 def kicad_num(v):
     return(float(v)/1000000.0)
-
 
 #
 # Helper function to return the reference type from the given reference
@@ -24,6 +25,32 @@ def reftype(s):
         if (c.isdigit()):
             return s[:i]
     return s
+
+#
+# We need to be able to support a list of footprints that need to be
+# rotated where the KiCAD symbol orientation is differnt to the JLCPCD
+# one.
+#
+def read_rotdb(filename):
+    db = []
+    with open(filename, "r") as fh:
+        for line in fh:
+            line = re.sub('#.*$', '', line)     # removal all after comment
+            line = line.rstrip()                # remove trailing space & newline
+            if (line == ""):
+                continue
+            db.append(line.split())
+    return db 
+
+def possible_rotate(footprint, rotdb):
+    for rot in rotdb:
+        ex = rot[0]
+        delta = float(rot[1])
+        if (re.search(ex, footprint)):
+            return delta
+    return 0
+
+
 
 
 class Shape():
@@ -215,6 +242,11 @@ mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "
 # MAIN FROM HERE
 #
 
+#
+# Read the rotations database...
+#
+rotdb = read_rotdb("rotations.cf")
+
 board = Shape()
 with open("/home/essele/kicad/sample/board.csv") as bfile:
     reader = csv.DictReader(bfile)
@@ -242,6 +274,9 @@ bom = {}
 
 # Placement will be a list of dicts for output...
 placement = []
+
+# Data for pandas and reporting
+data = []
 
 with open("/home/essele/kicad/sample/components.csv") as cfile:
     reader = csv.DictReader(cfile)
@@ -274,7 +309,15 @@ with open("/home/essele/kicad/sample/components.csv") as cfile:
             "Mid X":        c.x / 1000000.0,
             "Mid Y":        -c.y / 1000000.0,        # y direction is reversed
             "Layer":        layername,
-            "Rotation":     rotation,
+            "Rotation":     (rotation + possible_rotate(c.footprint, rotdb)) % 360,
+        })
+
+        data.append({
+            "Reference":    c.ref,
+            "Layer":        c.layer,
+            "Type":         c.getName(),
+            "Value":        c.value,
+            "LCSC":         c.lcsc,
         })
 
 
@@ -304,5 +347,11 @@ with open("out_cpl.csv", "w") as cplfile:
 #
 # Now generate a range of additional visualisations...
 #
+d = pd.DataFrame(data)
+print(d)
+
+dr = d["Type"].value_counts();
+print(dr)
+
 
 #show(p)
