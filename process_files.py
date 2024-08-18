@@ -31,25 +31,38 @@ def reftype(s):
 # rotated where the KiCAD symbol orientation is differnt to the JLCPCD
 # one.
 #
-def read_rotdb(filename):
-    db = []
-    with open(filename, "r") as fh:
-        for line in fh:
-            line = re.sub('#.*$', '', line)     # removal all after comment
-            line = line.rstrip()                # remove trailing space & newline
-            if (line == ""):
-                continue
-            db.append(line.split())
-    return db 
+class RotDB():
+    """
+    A Class for handling a rotations database
+    """
 
-def possible_rotate(footprint, rotdb):
-    for rot in rotdb:
-        ex = rot[0]
-        delta = float(rot[1])
-        if (re.search(ex, footprint)):
-            return delta
-    return 0
+    def __init__(self, filename):
+        """
+        Intialise the rotation db from the supplied filename
+        """
+        self.db = []
+        with open(filename, "r") as fh:
+            for line in fh:
+                line = re.sub('#.*$', '', line)     # remove all after comment
+                line = line.rstrip()                # remove trailing space and newline
+                if (line == ""):
+                    continue
+                self.db.append(line.split())
+    
+    def possible_rotate(self, footprint):
+        """
+        Provide optional rotation information for a given footprint
 
+        Examine the footprint name and see if we have a matching regular
+        expression that matches, if it does return the rotation value
+        otherwise return 0.
+        """
+        for rot in self.db:
+            ex = rot[0]
+            delta = float(rot[1])
+            if (re.search(ex, footprint)):
+                return delta
+        return 0
 
 
 
@@ -243,12 +256,13 @@ mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "
 #
 
 #
-# Read the rotations database...
+# Create the rotations database object...
 #
-rotdb = read_rotdb("rotations.cf")
+rotdb = RotDB("rotations.cf")
 
 board = Shape()
-with open("/home/essele/kicad/sample/board.csv") as bfile:
+with open("/tmp/stm32/board.csv") as bfile:
+# with open("/home/essele/kicad/sample/board.csv") as bfile:
     reader = csv.DictReader(bfile)
     for row in reader:
         print("XX: " + row["x"] + " -- " + row["y"]) 
@@ -278,7 +292,8 @@ placement = []
 # Data for pandas and reporting
 data = []
 
-with open("/home/essele/kicad/sample/components.csv") as cfile:
+with open("/tmp/stm32/components.csv") as cfile:
+# with open("/home/essele/kicad/sample/components.csv") as cfile:
     reader = csv.DictReader(cfile)
     for row in reader:
         # Get the reference type from the ref (i.e. R from R100)
@@ -309,7 +324,8 @@ with open("/home/essele/kicad/sample/components.csv") as cfile:
             "Mid X":        c.x / 1000000.0,
             "Mid Y":        -c.y / 1000000.0,        # y direction is reversed
             "Layer":        layername,
-            "Rotation":     (rotation + possible_rotate(c.footprint, rotdb)) % 360,
+            "Rotation":     (rotation + rotdb.possible_rotate(c.footprint)) % 360,
+
         })
 
         data.append({
@@ -354,4 +370,4 @@ dr = d["Type"].value_counts();
 print(dr)
 
 
-#show(p)
+show(p)
