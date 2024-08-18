@@ -7,12 +7,17 @@ import csv
 import string
 import pandas as pd
 import re
+import sys, os
 
 #
 # Helper function to convert from a KiCAD dimension (string) to
 # a float value in mm
 #
 def kicad_num(v):
+    """
+    Convert a supplied KiCad dimension string (in microns) into 
+    a float (in mm)
+    """
     return(float(v)/1000000.0)
 
 #
@@ -21,6 +26,10 @@ def kicad_num(v):
 # Could have used regex, but this seemed lighter weight.
 #
 def reftype(s):
+    """
+    Return the non-digit leading part of the supplied string, if there
+    are none then return the whole string.
+    """
     for i, c in enumerate(s):
         if (c.isdigit()):
             return s[:i]
@@ -66,15 +75,26 @@ class RotDB():
 
 
 
-class Shape():
+class Board():
+    """
+    A class to encapsulate the outline of a board. We accept a series of points representing
+    the polygon of the outline. This can then be shifted to a (0,0) position, and then the
+    outline can be drawn.
+    """
     
     def __init__(self):
+        """
+        TODO
+        """
         self.minx = -1
         self.miny = -1
         self.xlist = []
         self.ylist = []
 
     def addPoint(self, x, y):
+        """
+        TODO
+        """
         if (self.minx < 0 or x < self.minx):
             self.minx = x
         if (self.miny < 0 or y < self.miny):
@@ -83,15 +103,24 @@ class Shape():
         self.ylist.append(y)
 
     def shiftByAmount(self, movex, movey):
+        """
+        TODO
+        """
         for index, x in enumerate(self.xlist):
             self.xlist[index] = x - movex;
         for index, y in enumerate(self.ylist):
             self.ylist[index] = y - movey;
         
     def shiftToZero(self):
+        """
+        TODO
+        """
         self.shiftByAmount(self.minx, self.miny)
 
     def draw(self, plot, **kwargs):
+        """
+        TODO
+        """
         p.patch(self.xlist + [self.xlist[0]], self.ylist + [self.ylist[0]], **kwargs)
 
 
@@ -131,7 +160,8 @@ class Plottable():
     def hatch(self, plot):
         # Used fixed (not relative) gap for this one...
         gap = 0.2
-        plot.block(x=self.origin.x+gap, y=self.origin.y+gap, width=self.size.w-(gap*2), height=self.size.h-(gap*2),
+        plot.block(x=self.origin.x+gap, y=self.origin.y+gap, 
+                    width=self.size.w-(gap*2), height=self.size.h-(gap*2),
                     hatch_color="green", hatch_pattern="diagonal_cross", hatch_weight=1, 
                     fill_alpha=0.0, line_alpha=0.0, hatch_scale=8)
 
@@ -147,6 +177,14 @@ class Plottable():
         plot.ellipse(x=self.origin.x + (self.size.w * 0.5), y=self.origin.y + (self.size.h * 0.5),
         width=mindim*dia, height=mindim*dia, **kwargs)
 
+#
+# TODO: exceptions...
+#
+class InvalidData(Exception):
+   def __init___(self, exception_parameter, exception_message):
+       super().__init__(self, exception_parameter, exception_message)
+
+
 
 class Component():
     '''
@@ -156,8 +194,21 @@ class Component():
     3. To provide the outputs needed for creating the assembly files
     4. To provide access for other metrics
     '''
+
     def __init__(self, board, fields):
-        # First the fields we need for PCBA...
+        """
+        Creates a component related to a given board.
+
+        board is the board the component is on, this is used to properly scale drawing.
+        fields contains all the necessary data to process the component
+        """
+        # First we check if the supplied fields are correct...
+        for f in [ "ref", "value", "layer", "footprint", "lcsc", "x", "y", "rot",
+                    "left", "top", "right", "bottom" ]:
+            if not f in fields:
+                raise InvalidData(f, "Field missing from supplied data")
+
+        # Then store the fields we need for PCBA...
         self.ref = fields["ref"]
         self.value = fields["value"]
         self.layer = fields["layer"]
@@ -167,8 +218,6 @@ class Component():
         self.y = float(fields["y"])
         self.rot = float(fields["rot"])
 
-        # TODO: what if fields are missing or malformed?
-       
         # Now we can add the Plottable for board visualisation, co-ordinates
         # converted to mm here...
         self.plotter = Plottable(
@@ -178,15 +227,21 @@ class Component():
             kicad_num(fields["bottom"]) - kicad_num(fields["top"]))     # height
             
     def getName(self):
+        """
+        Return the name of the class (as we will be inherited)
+        """
         return type(self).__name__
 
     def getBOMKey(self):
+        """
+        Return a key that uniquely identifies a BOM item
+        """
         return self.value + "//" + self.footprint + "//" + self.lcsc
 
-    #
-    # Default drawing function is just the outline...
-    #
     def draw(self, plot):
+        """
+        Draw the component, just the ouline for the base Component.
+        """
         self.plotter.outline(plot)
 
 
@@ -255,13 +310,35 @@ mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "
 # MAIN FROM HERE
 #
 
+# First process the command line argument...
+if (len(sys.argv) != 2):
+    print ("Usage: " + sys.argv[0] + " [path_to_input_file_dir]")
+    sys.exit(1)
+
+file_path = sys.argv[1]
+
+if (not os.path.isdir(file_path)):
+    print ("Error: " + path + " is not a directory.")
+    sys.exit(1)
+
+board_file = os.path.join(file_path, "board.csv")
+component_file = os.path.join(file_path, "components.csv")
+
+if (not os.path.isfile(board_file)):
+    print ("Error: board.csv not found in " + path)
+    sys.exit(1)
+
+if (not os.path.isfile(component_file)):
+    print ("Error: components.csv not found in " + path)
+    sys.exit(1)
+
 #
 # Create the rotations database object...
 #
 rotdb = RotDB("rotations.cf")
 
-board = Shape()
-with open("/tmp/stm32/board.csv") as bfile:
+board = Board()
+with open(board_file) as bfile:
 # with open("/home/essele/kicad/sample/board.csv") as bfile:
     reader = csv.DictReader(bfile)
     for row in reader:
@@ -283,7 +360,7 @@ board.draw(p, line_width=2, fill_color="#002d04", line_color="black")
 # Now run through the components... prepare the visualations as well as the BOM/CPL info
 #
 
-# We will build a BOM list as we go, combining like elements...
+# We will build a BOM dict as we go, combining like elements...
 bom = {}
 
 # Placement will be a list of dicts for output...
@@ -292,7 +369,7 @@ placement = []
 # Data for pandas and reporting
 data = []
 
-with open("/tmp/stm32/components.csv") as cfile:
+with open(component_file) as cfile:
 # with open("/home/essele/kicad/sample/components.csv") as cfile:
     reader = csv.DictReader(cfile)
     for row in reader:
@@ -300,10 +377,10 @@ with open("/tmp/stm32/components.csv") as cfile:
         rt = reftype(row["ref"]);
 
         # Get the Class for that type of ref, otherwise an Unknown
-        map = mapping.get(rt, Unknown)
+        objclass = mapping.get(rt, Unknown)
 
         # Instantiate the object of the right class...
-        c = map(board, row)
+        c = objclass(board, row)
 
         # And draw the component for the board visualisation
         c.draw(p)
@@ -317,15 +394,14 @@ with open("/tmp/stm32/components.csv") as cfile:
 
         # Now we can work on the placement information...
         layername = "top" if (c.layer == "F.Cu") else "bottom"
-        rotation = c.rot
+        rotation = (c.rot + rotdb.possible_rotate(c.footprint)) % 360
 
         placement.append({
             "Designator":   c.ref,
             "Mid X":        c.x / 1000000.0,
             "Mid Y":        -c.y / 1000000.0,        # y direction is reversed
             "Layer":        layername,
-            "Rotation":     (rotation + rotdb.possible_rotate(c.footprint)) % 360,
-
+            "Rotation":     rotation,
         })
 
         data.append({
@@ -361,13 +437,23 @@ with open("out_cpl.csv", "w") as cplfile:
         writer.writerow(item)
 
 #
-# Now generate a range of additional visualisations...
+# Now we can produce the board visualisation...
+#
+show(p)
+
+#
+# Now generate a range of additional visualisations by creating a Pandas dataframe
+# from the data we have build up...
 #
 d = pd.DataFrame(data)
 print(d)
 
-dr = d["Type"].value_counts();
-print(dr)
 
-
+#
+# Produce a bar chart showing how many of each component type are used in the
+# board...
+#
+p = figure(x_range=d["Type"].unique(), height=500, title="Bar Chart of Counts of Component Types",
+            x_axis_label="Component Types", y_axis_label="Quantity")
+p.vbar(x=d["Type"].unique(), top=d["Type"].value_counts(), width=0.6)
 show(p)
