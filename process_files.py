@@ -1,13 +1,14 @@
 #!/usr/bin/python3
 
-from bokeh.plotting import figure, show
-from collections import OrderedDict
-from math import nan
-import csv
-import string
-import pandas as pd
-import re
-import sys, os
+from bokeh.plotting import figure, show     # for plotting
+from collections import OrderedDict         # for internal data struct
+from math import nan                        # for Bokeh point lists
+import csv                                  # csv import and export
+import string                               # string manipulation
+import pandas as pd                         # for visualisations
+import re                                   # for rotation matching
+import sys, os                              # path manipulation & exit
+import unittest                             # for testing
 
 #
 # Helper function to convert from a KiCAD dimension (string) to
@@ -121,7 +122,7 @@ class Board():
         """
         TODO
         """
-        p.patch(self.xlist + [self.xlist[0]], self.ylist + [self.ylist[0]], **kwargs)
+        plot.patch(self.xlist + [self.xlist[0]], self.ylist + [self.ylist[0]], **kwargs)
 
 
 class Point():
@@ -151,7 +152,7 @@ class Plottable():
         self.size = Size(w, h)
 
     def block(self, plot, x, y, w, h, **kwargs):
-        p.block(x=self.origin.x + (self.size.w * x), y=self.origin.y + (self.size.h * y),
+        plot.block(x=self.origin.x + (self.size.w * x), y=self.origin.y + (self.size.h * y),
                 width=self.size.w*w, height=self.size.h*h, **kwargs)
 
     def outline(self, plot):
@@ -310,150 +311,162 @@ mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "
 # MAIN FROM HERE
 #
 
-# First process the command line argument...
-if (len(sys.argv) != 2):
-    print ("Usage: " + sys.argv[0] + " [path_to_input_file_dir]")
-    sys.exit(1)
+def main():
+    # First process the command line argument...
+    if (len(sys.argv) != 2):
+        print ("Usage: " + sys.argv[0] + " [path_to_input_file_dir]")
+        sys.exit(1)
 
-file_path = sys.argv[1]
+    file_path = sys.argv[1]
 
-if (not os.path.isdir(file_path)):
-    print ("Error: " + path + " is not a directory.")
-    sys.exit(1)
+    if (not os.path.isdir(file_path)):
+        print ("Error: " + path + " is not a directory.")
+        sys.exit(1)
 
-board_file = os.path.join(file_path, "board.csv")
-component_file = os.path.join(file_path, "components.csv")
+    board_file = os.path.join(file_path, "board.csv")
+    component_file = os.path.join(file_path, "components.csv")
 
-if (not os.path.isfile(board_file)):
-    print ("Error: board.csv not found in " + path)
-    sys.exit(1)
+    if (not os.path.isfile(board_file)):
+        print ("Error: board.csv not found in " + path)
+        sys.exit(1)
 
-if (not os.path.isfile(component_file)):
-    print ("Error: components.csv not found in " + path)
-    sys.exit(1)
+    if (not os.path.isfile(component_file)):
+        print ("Error: components.csv not found in " + path)
+        sys.exit(1)
+
+    #
+    # Create the rotations database object...
+    #
+    rotdb = RotDB("rotations.cf")
+
+    board = Board()
+    with open(board_file) as bfile:
+    # with open("/home/essele/kicad/sample/board.csv") as bfile:
+        reader = csv.DictReader(bfile)
+        for row in reader:
+            print("XX: " + row["x"] + " -- " + row["y"]) 
+            board.addPoint(kicad_num(row["x"]), kicad_num(row["y"]))
+
+        board.shiftToZero()
+
+    #
+    # Draw the board outline...
+    #
+
+    # create a new plot with a title and axis labels
+    p = figure(title="PCB layout", x_axis_label="x (mm)", y_axis_label="y (mm)", match_aspect=True)
+    board.draw(p, line_width=2, fill_color="#002d04", line_color="black")
+    #p.line(board.xlist, board.ylist, legend_label="Board Outline", line_width=2)
+
+    #
+    # Now run through the components... prepare the visualations as well as the BOM/CPL info
+    #
+
+    # We will build a BOM dict as we go, combining like elements...
+    bom = {}
+
+    # Placement will be a list of dicts for output...
+    placement = []
+
+    # Data for pandas and reporting
+    data = []
+
+    with open(component_file) as cfile:
+    # with open("/home/essele/kicad/sample/components.csv") as cfile:
+        reader = csv.DictReader(cfile)
+        for row in reader:
+            # Get the reference type from the ref (i.e. R from R100)
+            rt = reftype(row["ref"]);
+
+            # Get the Class for that type of ref, otherwise an Unknown
+            objclass = mapping.get(rt, Unknown)
+
+            # Instantiate the object of the right class...
+            c = objclass(board, row)
+
+            # And draw the component for the board visualisation
+            c.draw(p)
+
+            # Now prepare the BOM info ... combine like components ...
+            key = c.getBOMKey()
+            if (not key in bom):
+                bom[key] = { "Component": c.value, "Footprint": c.footprint, "JLCPCB": c.lcsc, "refs": [ c.ref ] }
+            else:
+                bom[key]["refs"].append(c.ref)
+
+            # Now we can work on the placement information...
+            layername = "top" if (c.layer == "F.Cu") else "bottom"
+            rotation = (c.rot + rotdb.possible_rotate(c.footprint)) % 360
+
+            placement.append({
+                "Designator":   c.ref,
+                "Mid X":        c.x / 1000000.0,
+                "Mid Y":        -c.y / 1000000.0,        # y direction is reversed
+                "Layer":        layername,
+                "Rotation":     rotation,
+            })
+
+            data.append({
+                "Reference":    c.ref,
+                "Layer":        c.layer,
+                "Type":         c.getName(),
+                "Value":        c.value,
+                "LCSC":         c.lcsc,
+            })
+
+
+    #
+    # Now we can output the BOM...
+    #
+    with open("out_bom.csv", "w") as bomfile:
+        writer = csv.DictWriter(bomfile, quoting=csv.QUOTE_ALL,
+            fieldnames=["Component", "Designator", "Footprint", "JLCPCB"])
+        writer.writeheader()
+        for key, bominfo in bom.items():
+            # Replace list of refs with comma separated string...
+            bominfo["Designator"] = ",".join(bominfo["refs"])
+            del bominfo["refs"]
+            writer.writerow(bominfo)
+
+    #
+    # And the placement information
+    #
+    with open("out_cpl.csv", "w") as cplfile:
+        writer = csv.DictWriter(cplfile, quoting=csv.QUOTE_NONNUMERIC,
+            fieldnames=["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
+        writer.writeheader();
+        for item in placement:
+            writer.writerow(item)
+
+    #
+    # Now we can produce the board visualisation...
+    #
+    show(p)
+
+    #
+    # Now generate a range of additional visualisations by creating a Pandas dataframe
+    # from the data we have build up...
+    #
+    d = pd.DataFrame(data)
+    print(d)
+
+
+    #
+    # Produce a bar chart showing how many of each component type are used in the
+    # board...
+    #
+    p = figure(x_range=d["Type"].unique(), height=500, title="Bar Chart of Counts of Component Types",
+                x_axis_label="Component Types", y_axis_label="Quantity")
+    p.vbar(x=d["Type"].unique(), top=d["Type"].value_counts(), width=0.6)
+    show(p)
+
 
 #
-# Create the rotations database object...
-#
-rotdb = RotDB("rotations.cf")
-
-board = Board()
-with open(board_file) as bfile:
-# with open("/home/essele/kicad/sample/board.csv") as bfile:
-    reader = csv.DictReader(bfile)
-    for row in reader:
-        print("XX: " + row["x"] + " -- " + row["y"]) 
-        board.addPoint(kicad_num(row["x"]), kicad_num(row["y"]))
-
-    board.shiftToZero()
-
-#
-# Draw the board outline...
+# Test Cases
 #
 
-# create a new plot with a title and axis labels
-p = figure(title="PCB layout", x_axis_label="x (mm)", y_axis_label="y (mm)", match_aspect=True)
-board.draw(p, line_width=2, fill_color="#002d04", line_color="black")
-#p.line(board.xlist, board.ylist, legend_label="Board Outline", line_width=2)
-
-#
-# Now run through the components... prepare the visualations as well as the BOM/CPL info
-#
-
-# We will build a BOM dict as we go, combining like elements...
-bom = {}
-
-# Placement will be a list of dicts for output...
-placement = []
-
-# Data for pandas and reporting
-data = []
-
-with open(component_file) as cfile:
-# with open("/home/essele/kicad/sample/components.csv") as cfile:
-    reader = csv.DictReader(cfile)
-    for row in reader:
-        # Get the reference type from the ref (i.e. R from R100)
-        rt = reftype(row["ref"]);
-
-        # Get the Class for that type of ref, otherwise an Unknown
-        objclass = mapping.get(rt, Unknown)
-
-        # Instantiate the object of the right class...
-        c = objclass(board, row)
-
-        # And draw the component for the board visualisation
-        c.draw(p)
-
-        # Now prepare the BOM info ... combine like components ...
-        key = c.getBOMKey()
-        if (not key in bom):
-            bom[key] = { "Component": c.value, "Footprint": c.footprint, "JLCPCB": c.lcsc, "refs": [ c.ref ] }
-        else:
-            bom[key]["refs"].append(c.ref)
-
-        # Now we can work on the placement information...
-        layername = "top" if (c.layer == "F.Cu") else "bottom"
-        rotation = (c.rot + rotdb.possible_rotate(c.footprint)) % 360
-
-        placement.append({
-            "Designator":   c.ref,
-            "Mid X":        c.x / 1000000.0,
-            "Mid Y":        -c.y / 1000000.0,        # y direction is reversed
-            "Layer":        layername,
-            "Rotation":     rotation,
-        })
-
-        data.append({
-            "Reference":    c.ref,
-            "Layer":        c.layer,
-            "Type":         c.getName(),
-            "Value":        c.value,
-            "LCSC":         c.lcsc,
-        })
 
 
-#
-# Now we can output the BOM...
-#
-with open("out_bom.csv", "w") as bomfile:
-    writer = csv.DictWriter(bomfile, quoting=csv.QUOTE_ALL,
-        fieldnames=["Component", "Designator", "Footprint", "JLCPCB"])
-    writer.writeheader()
-    for key, bominfo in bom.items():
-        # Replace list of refs with comma separated string...
-        bominfo["Designator"] = ",".join(bominfo["refs"])
-        del bominfo["refs"]
-        writer.writerow(bominfo)
+if __name__ == '__main__':
+    main()
 
-#
-# And the placement information
-#
-with open("out_cpl.csv", "w") as cplfile:
-    writer = csv.DictWriter(cplfile, quoting=csv.QUOTE_NONNUMERIC,
-        fieldnames=["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
-    writer.writeheader();
-    for item in placement:
-        writer.writerow(item)
-
-#
-# Now we can produce the board visualisation...
-#
-show(p)
-
-#
-# Now generate a range of additional visualisations by creating a Pandas dataframe
-# from the data we have build up...
-#
-d = pd.DataFrame(data)
-print(d)
-
-
-#
-# Produce a bar chart showing how many of each component type are used in the
-# board...
-#
-p = figure(x_range=d["Type"].unique(), height=500, title="Bar Chart of Counts of Component Types",
-            x_axis_label="Component Types", y_axis_label="Quantity")
-p.vbar(x=d["Type"].unique(), top=d["Type"].value_counts(), width=0.6)
-show(p)
