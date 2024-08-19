@@ -28,12 +28,15 @@ def kicad_num(v):
 #
 def reftype(s):
     """
-    Return the non-digit leading part of the supplied string, if there
-    are none then return the whole string.
+    Return the leading alpha part of the string, if there is none then
+    return the whole string.
     """
     for i, c in enumerate(s):
-        if (c.isdigit()):
-            return s[:i]
+        if (not c.isalpha()):
+            if (i == 0):
+                break;
+            return s[:i].upper()
+            
     return s
 
 #
@@ -303,9 +306,55 @@ class Diode(Component):
                     [0.5, 0.5, 0.3, 0.5, 0.7, 0.5, nan, 0.3, 0.7, nan, 0.5, 0.5],
                     color="yellow", line_width=1)
 
+class Dummy():
+    """
+    A dummy object to help with unit testing, we can manually set attributes to
+    simulate an object that will have methods called.
+    """
+    def __init__(self):
+        pass
 
-mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "U": IC, "D": Diode }
 
+class TestSupportingFunctions(unittest.TestCase):
+    
+    def test_kicad_num(self):
+        self.assertEqual(kicad_num("123450000"), 123.45)
+        self.assertEqual(kicad_num("0"), 0.00)
+        self.assertEqual(kicad_num("-100500000"), -100.5)
+
+    def test_reftype(self):
+        self.assertEqual(reftype("R100"), "R")
+        self.assertEqual(reftype("FB101"), "FB")
+        self.assertEqual(reftype("q100"), "Q")
+        self.assertEqual(reftype("+45"), "+45")
+        self.assertEqual(reftype("ABC"), "ABC")
+        self.assertEqual(reftype("XY99Z"), "XY")
+
+    def test_rotdb(self):
+        rdb = RotDB("rotations.cf")
+        self.assertEqual(rdb.possible_rotate("non-matching-footprint"), 0)
+        self.assertEqual(rdb.possible_rotate("SOT-23"), 180)
+        self.assertEqual(rdb.possible_rotate("TDK_ATB"), 90)
+
+    def test_board(self):
+        board = Board()
+        board.addPoint(200, 400)
+        board.addPoint(200, 500)
+        board.addPoint(300, 500)
+        board.addPoint(300, 400)
+        board.shiftToZero()
+        self.assertEqual(board.xlist, [0, 0, 100, 100])
+        self.assertEqual(board.ylist, [0, 100, 100, 0])
+
+        def dummy_patch(xl, yl, **kwargs):
+            self.assertEqual(xl, [0, 0, 100, 100, 0])
+            self.assertEqual(yl, [0, 100, 100, 0, 0])
+            self.assertEqual(kwargs["foo"], 100)
+            self.assertEqual(kwargs["bar"], 200)
+
+        plot = Dummy()
+        setattr(plot, "patch", dummy_patch)
+        board.draw(plot, foo=100, bar=200)
 
 #
 # MAIN FROM HERE
@@ -313,10 +362,19 @@ mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, "Q": Transistor, "
 
 def main():
     # First process the command line argument...
-    if (len(sys.argv) != 2):
-        print ("Usage: " + sys.argv[0] + " [path_to_input_file_dir]")
+    # (1) command <path_to_input_file_dir>
+    # (2) command -T [any other test arguments]
+    if (len(sys.argv) < 2):
+        print ("Usage: " + sys.argv[0] + " <-T [test_args] | path_to_input_file_dir>")
         sys.exit(1)
 
+    # Kick off the unit tests...
+    if (sys.argv[1] == "-T"):
+        del sys.argv[1]             # -T confuses unittest!
+        unittest.main()
+        sys.exit(0)
+
+    # Otherwise we are running against the input dir...
     file_path = sys.argv[1]
 
     if (not os.path.isdir(file_path)):
@@ -339,6 +397,14 @@ def main():
     #
     rotdb = RotDB("rotations.cf")
 
+    #
+    # Support automatically mapping from reference to object type...
+    mapping = { "FB": FerriteBead, "R": Resistor, "C": Capacitor, 
+                "Q": Transistor, "U": IC, "D": Diode }
+
+    #
+    # Now create the Board object...
+    #
     board = Board()
     with open(board_file) as bfile:
     # with open("/home/essele/kicad/sample/board.csv") as bfile:
