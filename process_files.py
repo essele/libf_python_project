@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from bokeh.plotting import figure, show     # for plotting
-from collections import OrderedDict         # for internal data struct
 from math import nan                        # for Bokeh point lists
 import csv                                  # csv import and export
 import string                               # string manipulation
@@ -219,7 +218,7 @@ class Component():
         self.footprint = fields["footprint"]
         self.lcsc = fields["lcsc"]
         self.x = float(fields["x"])
-        self.y = float(fields["y"])
+        self.y = -float(fields["y"])
         self.rot = float(fields["rot"])
 
         # Now we can add the Plottable for board visualisation, co-ordinates
@@ -356,6 +355,28 @@ class TestSupportingFunctions(unittest.TestCase):
         setattr(plot, "patch", dummy_patch)
         board.draw(plot, foo=100, bar=200)
 
+    def test_component(self):
+        # Create Dummy() board for minx/miny values
+        board = Dummy()
+        setattr(board, "minx", 100)
+        setattr(board, "miny", 200)
+        fields = { "ref": "R100", "value": "1k", "layer": "F.Cu", "footprint": "0402", "lcsc": "", 
+                    "x": str(500*1000000), "y": str(300*1000000), "rot": str(0),
+                    "left": str(480*1000000), "top": str(290*1000000), 
+                    "right": str(520*1000000), "bottom": str(310*1000000) }
+        # Test Component is created...
+        comp = Component(board, fields)
+        self.assertIsNotNone(comp)
+        # Check the re-alignment to the board is ok...
+        self.assertEqual(comp.plotter.origin.x, 380)
+        self.assertEqual(comp.plotter.origin.y, 90)
+        self.assertEqual(comp.plotter.size.w, 40)
+        self.assertEqual(comp.plotter.size.h, 20)
+        # Check it fails if fields are wrong...
+        del fields["footprint"]
+        with self.assertRaises(InvalidData):
+            comp = Component(board, fields)
+
 #
 # MAIN FROM HERE
 #
@@ -410,7 +431,6 @@ def main():
     # with open("/home/essele/kicad/sample/board.csv") as bfile:
         reader = csv.DictReader(bfile)
         for row in reader:
-            print("XX: " + row["x"] + " -- " + row["y"]) 
             board.addPoint(kicad_num(row["x"]), kicad_num(row["y"]))
 
         board.shiftToZero()
