@@ -1,9 +1,11 @@
 #!/usr/bin/python3.10
 
 #
-#
-#
-#
+# KiCad plugin to output data useful to produce files that support the JLCPCB
+# assembly service.
+# 
+# This script can be run by the plugin (using the current board) or from the
+# command line if a board filename is supplied.
 #
 # In an ideal world you would do full processing in here rather than export CSV's
 # for external processing, but to make testing easier, and for testing without KiCAD
@@ -15,6 +17,7 @@
 
 import pcbnew           # To access KiCAD functions
 import os               # To manipulate filenames
+import sys              # For argv
 import csv              # To output CSV files
 import wx               # For in-kicad dialog box
 
@@ -46,15 +49,12 @@ class LIBFPlugin(pcbnew.ActionPlugin):
         #
         boardfile = board.GetFileName()
         path = os.path.dirname(boardfile)
-#        name = os.path.splitext(os.path.basename(boardfile))[0]
 
         #
-        # Try to work out the board outline
+        # Work out the board outline
         #
         outline = pcbnew.SHAPE_POLY_SET()
-        # TODO: catch error
         board.GetBoardPolygonOutlines(outline)
-
         linechain = outline.Outline(0)
 
         #
@@ -133,6 +133,15 @@ class LIBFPlugin(pcbnew.ActionPlugin):
 # Allow running from the command line for easier debugging...
 #
 if __name__ == "__main__":
-    b = pcbnew.LoadBoard("/home/essele/kicad/sample/Yaugi Mini.kicad_pcb")
-    LIBFPlugin().Run(board=b)
+    if (len(sys.argv) != 2):
+        print ("Usage: " + sys.argv[0] + " <path_to_kicad_pcb_file>")
+        sys.exit(1)
 
+    board_file = sys.argv[1]
+
+    if (not os.path.isfile(board_file)):
+        print ("Error: " + board_file + " not found.")
+        sys.exit(1)
+
+    b = pcbnew.LoadBoard(board_file)
+    LIBFPlugin().Run(board=b)

@@ -1,8 +1,23 @@
 #!/usr/bin/python3
 
+# --------------------------------------------------------------------------------------
+# Script to process data exported from KiCad and produce the output files needed to
+# support the JLCPCB PCB Assembly service, namely a BOM CSV file, and a CPL CSV file.
+#
+# Usage:
+#   process_files.py -T     -- runs the unit tests
+#   process_files.py <path> -- runs the main process
+#
+# For processing the board.csv and components.csv files must exist in the given
+# directory.
+#
+# Output files out_bom.csv and out_cpl.csv will be created in the current directory.
+# --------------------------------------------------------------------------------------
+
 from bokeh.plotting import figure, show     # for plotting
 from bokeh.layouts import column            # mulitple plots in a column
 from bokeh.models import ColumnDataSource, DataTable, TableColumn    # For a table 
+from bokeh.models.widgets import Div        # So we can title the table
 from math import nan                        # for Bokeh point lists
 import csv                                  # csv import and export
 import string                               # string manipulation
@@ -10,6 +25,10 @@ import pandas as pd                         # for visualisations
 import re                                   # for rotation matching
 import sys, os                              # path manipulation & exit
 import unittest                             # for testing
+
+# --------------------------------------------------------------------------------------
+# HELPER FUNCTIONS
+# --------------------------------------------------------------------------------------
 
 #
 # Helper function to convert from a KiCAD dimension (string) to
@@ -39,6 +58,10 @@ def reftype(s):
             return s[:i].upper()
             
     return s
+
+# --------------------------------------------------------------------------------------
+# ROTATION DATABASE CLASS
+# --------------------------------------------------------------------------------------
 
 #
 # We need to be able to support a list of footprints that need to be
@@ -78,7 +101,9 @@ class RotDB():
                 return delta
         return 0
 
-
+# --------------------------------------------------------------------------------------
+# BOARD CLASS
+# --------------------------------------------------------------------------------------
 
 class Board():
     """
@@ -89,7 +114,7 @@ class Board():
     
     def __init__(self):
         """
-        TODO
+        Just prepare the internal structures
         """
         self.minx = -1
         self.miny = -1
@@ -98,7 +123,7 @@ class Board():
 
     def addPoint(self, x, y):
         """
-        TODO
+        Add a point to the point lists and keep track of the minimum values of x and y.
         """
         if (self.minx < 0 or x < self.minx):
             self.minx = x
@@ -109,7 +134,7 @@ class Board():
 
     def shiftByAmount(self, movex, movey):
         """
-        TODO
+        Move all the points by the given amounts.
         """
         for index, x in enumerate(self.xlist):
             self.xlist[index] = x - movex
@@ -118,16 +143,20 @@ class Board():
         
     def shiftToZero(self):
         """
-        TODO
+        Move all the points so that the lowest value of x and y is 0 in both cases.
         """
         self.shiftByAmount(self.minx, self.miny)
 
     def draw(self, plot, **kwargs):
         """
-        TODO
+        Draw the outline (closing the polygon) and pass any additional arguments on to
+        the patch() call.
         """
         plot.patch(self.xlist + [self.xlist[0]], self.ylist + [self.ylist[0]], **kwargs)
 
+# --------------------------------------------------------------------------------------
+# PLOTTABLE CLASS
+# --------------------------------------------------------------------------------------
 
 class Point():
     '''
@@ -178,18 +207,28 @@ class Plottable():
         plot.line(xlist, ylist, **kwargs)
 
     def circle(self, plot, dia, **kwargs):
+        """
+        A simplified circle() capability based on the ellipse() call.
+        dia is a percentage of the minimum size (width or height) of the object.
+        """
         mindim = min(self.size.w, self.size.h)
         plot.ellipse(x=self.origin.x + (self.size.w * 0.5), y=self.origin.y + (self.size.h * 0.5),
         width=mindim*dia, height=mindim*dia, **kwargs)
 
+# --------------------------------------------------------------------------------------
+# CUSTOM EXCEPTION
+# --------------------------------------------------------------------------------------
+
 #
-# TODO: exceptions...
+# A custom Exception for when invalid data is provided...
 #
 class InvalidData(Exception):
    def __init___(self, exception_parameter, exception_message):
        super().__init__(self, exception_parameter, exception_message)
 
-
+# --------------------------------------------------------------------------------------
+# BASE COMPONENT CLASS
+# --------------------------------------------------------------------------------------
 
 class Component():
     '''
@@ -249,6 +288,9 @@ class Component():
         """
         self.plotter.outline(plot)
 
+# --------------------------------------------------------------------------------------
+# COMPONENT SUBCLASES
+# --------------------------------------------------------------------------------------
 
 class Unknown(Component):
     def draw(self, plot):
@@ -306,6 +348,10 @@ class Diode(Component):
                     [0.1, 0.3, 0.3, 0.7, 0.3, 0.3, nan, 0.7, 0.7, nan, 0.7, 0.9], 
                     [0.5, 0.5, 0.3, 0.5, 0.7, 0.5, nan, 0.3, 0.7, nan, 0.5, 0.5],
                     color="yellow", line_width=1)
+
+# --------------------------------------------------------------------------------------
+# TEST CASES
+# --------------------------------------------------------------------------------------
 
 class Dummy():
     """
@@ -379,9 +425,9 @@ class TestSupportingFunctions(unittest.TestCase):
         with self.assertRaises(InvalidData):
             comp = Component(board, fields)
 
-#
-# MAIN FROM HERE
-#
+# --------------------------------------------------------------------------------------
+# MAIN
+# --------------------------------------------------------------------------------------
 
 def main():
     # First process the command line argument...
@@ -521,10 +567,9 @@ def main():
     with open("out_cpl.csv", "w") as cplfile:
         writer = csv.DictWriter(cplfile, quoting=csv.QUOTE_NONNUMERIC,
             fieldnames=["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
-        writer.writeheader();
+        writer.writeheader()
         for item in placement:
             writer.writerow(item)
-
 
     #
     # Now generate a range of additional visualisations by creating a Pandas dataframe
@@ -532,7 +577,6 @@ def main():
     #
     d = pd.DataFrame(data)
     print(d)
-
 
     #
     # Produce a bar chart showing how many of each component type are used in the
@@ -542,22 +586,17 @@ def main():
                 x_axis_label="Component Types", y_axis_label="Quantity")
     v2.vbar(x=d["Type"].unique(), top=d["Type"].value_counts(), width=0.6)
 
-
     #
-    # Experimenting with a table
+    # Produce a table with all of our coponent information...
     #
     source = ColumnDataSource(d)
     columns = [TableColumn(field=col, title=col) for col in d.columns]
     v3 = DataTable(source = source, columns = columns)
+    v3title = Div(text="<h3><b>Table of Components</b></h3>")
 
     # Now plot the visualisation vertically
-    p = column(v1, v2, v3)
+    p = column(v1, v2, v3title, v3)
     show(p)
-
-#
-# Test Cases
-#
-
 
 
 if __name__ == '__main__':
