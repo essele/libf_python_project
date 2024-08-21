@@ -51,11 +51,11 @@ class LIBFPlugin(pcbnew.ActionPlugin):
         #
         # Try to work out the board outline
         #
-        outline = pcbnew.SHAPE_POLY_SET();
+        outline = pcbnew.SHAPE_POLY_SET()
         # TODO: catch error
         board.GetBoardPolygonOutlines(outline)
 
-        linechain = outline.Outline(0);
+        linechain = outline.Outline(0)
 
         #
         # Now prepare to write the board.csv file which just contains a list of
@@ -94,14 +94,13 @@ class LIBFPlugin(pcbnew.ActionPlugin):
                 else:
                     lcsc = ""
 
-                x = fp.GetPosition().x;
-                y = fp.GetPosition().y;
-                rot = fp.GetOrientation().AsDegrees();
-                layer = fp.GetLayerName();
-                ref = fp.GetReference();
-                value = fp.GetValue();
-                #layername = "top" if (layer == "F.Cu") else "bottom"
-                fpname = str(fp.GetFPID().GetLibItemName())
+                x = fp.GetPosition().x
+                y = fp.GetPosition().y
+                rot = fp.GetOrientation().AsDegrees()
+                layer = fp.GetLayerName()
+                ref = fp.GetReference()
+                value = fp.GetValue()
+                fpname = fp.GetFPID().GetLibItemName()
 
                 # fp.GetBoundingBox seems to be massive, so go via GetCourtyard
                 #bb = fp.GetBoundingBox()

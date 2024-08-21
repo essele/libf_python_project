@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 from bokeh.plotting import figure, show     # for plotting
+from bokeh.layouts import column            # mulitple plots in a column
+from bokeh.models import ColumnDataSource, DataTable, TableColumn    # For a table 
 from math import nan                        # for Bokeh point lists
 import csv                                  # csv import and export
 import string                               # string manipulation
@@ -33,7 +35,7 @@ def reftype(s):
     for i, c in enumerate(s):
         if (not c.isalpha()):
             if (i == 0):
-                break;
+                break
             return s[:i].upper()
             
     return s
@@ -110,9 +112,9 @@ class Board():
         TODO
         """
         for index, x in enumerate(self.xlist):
-            self.xlist[index] = x - movex;
+            self.xlist[index] = x - movex
         for index, y in enumerate(self.ylist):
-            self.ylist[index] = y - movey;
+            self.ylist[index] = y - movey
         
     def shiftToZero(self):
         """
@@ -239,7 +241,7 @@ class Component():
         """
         Return a key that uniquely identifies a BOM item
         """
-        return self.value + "//" + self.footprint + "//" + self.lcsc
+        return "//".join([self.value, self.footprint, self.lcsc])
 
     def draw(self, plot):
         """
@@ -289,10 +291,10 @@ class IC(Component):
         xx = [ 0.3, 0.7, 0.7, 0.3, 0.3, nan ];      # Main box
         yy = [ 0.2, 0.2, 0.8, 0.8, 0.2, nan ];      # Main box
         for i in [ 0.3, 0.4, 0.5, 0.6, 0.7 ]:       # Add legs to both sides
-            xx += [ 0.1, 0.3, nan ];
-            yy += [ i, i, nan ];
-            xx += [ 0.7, 0.9, nan ];
-            yy += [ i, i, nan ];
+            xx += [ 0.1, 0.3, nan ]
+            yy += [ i, i, nan ]
+            xx += [ 0.7, 0.9, nan ]
+            yy += [ i, i, nan ]
 
         self.plotter.line(plot, xx, yy, color="yellow", line_width=1)
 
@@ -440,9 +442,8 @@ def main():
     #
 
     # create a new plot with a title and axis labels
-    p = figure(title="PCB layout", x_axis_label="x (mm)", y_axis_label="y (mm)", match_aspect=True)
-    board.draw(p, line_width=2, fill_color="#002d04", line_color="black")
-    #p.line(board.xlist, board.ylist, legend_label="Board Outline", line_width=2)
+    v1 = figure(title="PCB layout", x_axis_label="x (mm)", y_axis_label="y (mm)", match_aspect=True)
+    board.draw(v1, line_width=2, fill_color="#002d04", line_color="black")
 
     #
     # Now run through the components... prepare the visualations as well as the BOM/CPL info
@@ -471,7 +472,7 @@ def main():
             c = objclass(board, row)
 
             # And draw the component for the board visualisation
-            c.draw(p)
+            c.draw(v1)
 
             # Now prepare the BOM info ... combine like components ...
             key = c.getBOMKey()
@@ -524,10 +525,6 @@ def main():
         for item in placement:
             writer.writerow(item)
 
-    #
-    # Now we can produce the board visualisation...
-    #
-    show(p)
 
     #
     # Now generate a range of additional visualisations by creating a Pandas dataframe
@@ -541,11 +538,21 @@ def main():
     # Produce a bar chart showing how many of each component type are used in the
     # board...
     #
-    p = figure(x_range=d["Type"].unique(), height=500, title="Bar Chart of Counts of Component Types",
+    v2 = figure(x_range=d["Type"].unique(), height=500, title="Bar Chart of Counts of Component Types",
                 x_axis_label="Component Types", y_axis_label="Quantity")
-    p.vbar(x=d["Type"].unique(), top=d["Type"].value_counts(), width=0.6)
-    show(p)
+    v2.vbar(x=d["Type"].unique(), top=d["Type"].value_counts(), width=0.6)
 
+
+    #
+    # Experimenting with a table
+    #
+    source = ColumnDataSource(d)
+    columns = [TableColumn(field=col, title=col) for col in d.columns]
+    v3 = DataTable(source = source, columns = columns)
+
+    # Now plot the visualisation vertically
+    p = column(v1, v2, v3)
+    show(p)
 
 #
 # Test Cases
