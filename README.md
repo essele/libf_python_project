@@ -41,3 +41,8 @@ So to use the sample board, you can use the following:
 
 This will produce an out_bom.csv and an out_cpl.csv file in the current directory.
 
+# License
+
+Please note that this project is not currently open-source as it was built
+for a specific University need. A future version may be made available that
+will be open-source.
